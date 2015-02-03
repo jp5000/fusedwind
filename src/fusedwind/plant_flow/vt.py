@@ -708,5 +708,25 @@ class GenericWindFarmTurbineLayout(VariableTree):
         distFlowCoord = einsum('ij,jkl->ikl',ROT,vectWTtoWT)
 
         nDownstream = [(distFlowCoord[0,i,:]<0).sum() for i in range(self.n_wt)]
-        idWT = np.argsort(nDownstream)
-        return distFlowCoord, idWT
+        idWT = array(nDownstream).argsort().argsort()
+        return distFlowCoord, nDownstream, idWT
+
+    def plot(self,wd=0.):
+        x = self.wt_positions.T[0,:]/1000
+        y = self.wt_positions.T[1,:]/1000
+        dist,nDownstream, idWT = self.turbineDistance(wd)
+        fig, ax = plt.subplots()
+        ax.scatter(x,y,c='black')
+        for i in range(self.n_wt):
+            ax.annotate(idWT[i], (x[i],y[i]))
+        ax.set_xlabel('x [km]')
+        ax.set_ylabel('y [km]')
+        return fig
+
+if __name__ == '__main__':
+
+    from fusedwind.plant_flow.generate_fake_vt import *
+
+    WindPlant = generate_random_wt_layout(nwt=10)
+    fig = WindPlant.plot(wd=270.)
+    plt.show()
