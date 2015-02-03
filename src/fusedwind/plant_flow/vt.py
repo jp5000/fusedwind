@@ -1,6 +1,8 @@
 import numpy as np
-from numpy import ndarray, array, loadtxt, log, zeros, cos, arccos, sin, nonzero, argsort, NaN, mean, ones, vstack, linspace, exp, arctan, arange
-from numpy import pi, sqrt, dot, diff
+from numpy import ndarray, array, loadtxt, log, zeros, cos, arccos, sin, nonzero
+from numpy import argsort, NaN, mean, ones, vstack, linspace, exp, arctan, arange
+from numpy import pi, sqrt, dot, diff, swapaxes, repeat, atleast_2d, radians
+from numpy import einsum
 from numpy.linalg.linalg import norm
 from numpy.testing import assert_equal
 from scipy.interpolate import interp1d
@@ -481,7 +483,7 @@ class GenericWindRoseVT(VariableTree):
 #     single_wind_turbine = Bool(False, desc='Define if the layout has only one type of turbine or more')
 #     wind_turbine = VarTree(ExtendedWindTurbinePowerCurveVT(), desc='wind turbine power curve')
 
-    
+
 implement_base(GenericWindTurbineVT, GenericWindTurbinePowerCurveVT)
 class WTPC(GenericWindTurbinePowerCurveVT):
     """ A GenericWindTurbinePowerCurveVT with a name, position and wind rose
@@ -679,3 +681,32 @@ class GenericWindFarmTurbineLayout(VariableTree):
         """
 
         return pd.DataFrame([self.create_dict(n) for n in range(self.n_wt)])
+
+    def turbineDistance(self,wd):
+        """
+        Computes the WT to WT distance in flow coordinates
+        ranks the WT starting from the most upstream turbine
+
+        Inputs
+        ----------
+        wd (float): Wind direction in degrees
+
+        Outputs
+        ----------
+        distFlowCoord: Vector from iWT to jWT: self.vectWTtoWT[:,i,j]
+        idWT (int np.array): turbine index array
+        """
+
+        # 2D Vector from iWT to jWT: self.vectWTtoWT[:,i,j]   [2,n_wt,n_wt]
+        vectWTtoWT = swapaxes([self.wt_positions.T-repeat(atleast_2d \
+                     (self.wt_positions.T[:,i]).T,self.n_wt,axis=1) \
+                     for i in range(self.n_wt)],0,1)
+
+        angle = radians(270.-wd)
+        ROT = array([[cos(angle), sin(angle)], \
+                    [-sin(angle), cos(angle)]])
+        distFlowCoord = einsum('ij,jkl->ikl',ROT,vectWTtoWT)
+
+        nDownstream = [(distFlowCoord[0,i,:]<0).sum() for i in range(self.n_wt)]
+        idWT = np.argsort(nDownstream)
+        return distFlowCoord, idWT

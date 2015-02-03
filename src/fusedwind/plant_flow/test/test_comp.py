@@ -82,7 +82,6 @@ wr_result = {
           1.30756674e-03, 9.17018472e-04, 6.18067439e-04, 4.00285013e-04, 2.49050823e-04, 1.48827861e-04,
           8.53960207e-05, 4.70346524e-05, 2.48592270e-05, 7.39661364e-06]])}
 
-
 class TestWindFarm(GenericWindFarm):
     def execute(self):
         self.wt_power = [random() * wt_desc.power_rating for wt_desc in self.wt_layout.wt_list]
@@ -151,14 +150,80 @@ class test_GenericFlowModel(unittest.TestCase):
         c = GenericFlowModel()
 
 
-class test_GenericWakeModel(unittest.TestCase):
-    def test_init(self):
-        c = GenericWakeModel()
-
-
 class test_GenericInflowGenerator(unittest.TestCase):
     def test_init(self):
         c = GenericInflowGenerator()
+
+
+class test_PowerLawInflowGenerator(unittest.TestCase):
+    def test_init(self):
+        c = GenericInflowGenerator()
+
+    def test_execute(self):
+        in_pl = PowerLawInflowGenerator()
+        in_pl.wind_speed = 10.
+        in_pl.z_ref = 100.
+        in_pl.ws_positions = array([[0.,0.,0.],[0.,0.,100.],[0.,0.,1000.]])
+        in_pl.shear_coef = 0.1
+        in_pl.run()
+        self.assertEqual(in_pl.ws_array,array([0.,1.,10.**1.1]))
+
+
+class test_LogLawInflowGenerator(unittest.TestCase):
+    def test_init(self):
+        c = LogLawInflowGenerator()
+
+    def test_execute(self):
+        in_log = LogLawInflowGenerator()
+        in_log.wind_speed = 10.
+        in_log.z_ref = 100.
+        in_log.ws_positions = array([[0.,0.,50.],[0.,0.,100.],[0.,0.,1000.]])
+        in_log.z_0 = 0.0002
+        in_log.L = NaN
+        in_log.run()
+        self.assert_almost_equal(in_log.ws_array,array([9.47178175,10.,11.75470304]))
+
+
+        in_log2 = LogLawInflowGenerator()
+        in_log2.wind_speed = 10.
+        in_log2.z_ref = 100.
+        in_log2.ws_positions = array([[0.,0.,50.],[0.,0.,100.],[0.,0.,1000.]])
+        in_log2.z_0 = 0.0002
+        in_log2.L = 20000
+        in_log2.stab_term = 0
+        self.assert_almost_equal(in_log2.ws_array,array([9.46378784,10.,11.91245339]))
+
+        in_log2 = LogLawInflowGenerator()
+        in_log2.wind_speed = 10.
+        in_log2.z_ref = 100.
+        in_log2.ws_positions = array([[0.,0.,50.],[0.,0.,100.],[0.,0.,1000.]])
+        in_log2.z_0 = 0.0002
+        in_log2.L = -1000
+        in_log2.stab_term = 0
+        self.assert_almost_equal(in_log2.ws_array,array([9.56011479,10.,11.06759567]))
+
+        in_log3 = LogLawInflowGenerator()
+        in_log3.wind_speed = 10.
+        in_log3.z_ref = 100.
+        in_log3.ws_positions = array([[0.,0.,50.],[0.,0.,100.],[0.,0.,1000.]])
+        in_log3.z_0 = 0.0002
+        in_log3.L = 20000
+        in_log3.stab_term = 1
+        self.assert_almost_equal(in_log3.ws_array,array([9.46361807,10.,11.91580365]))
+
+        in_log3 = LogLawInflowGenerator()
+        in_log3.wind_speed = 10.
+        in_log3.z_ref = 100.
+        in_log3.ws_positions = array([[0.,0.,50.],[0.,0.,100.],[0.,0.,1000.]])
+        in_log3.z_0 = 0.0002
+        in_log3.L = -1000
+        in_log3.stab_term = 1
+        self.assert_almost_equal(in_log3.ws_array,array([9.57125298,10.,11.02583296]))
+
+
+class test_GenericWakeModel(unittest.TestCase):
+    def test_init(self):
+        c = GenericWakeModel()
 
 
 class test_GenericWindTurbine(unittest.TestCase):

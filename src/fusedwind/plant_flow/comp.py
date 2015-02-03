@@ -1,6 +1,6 @@
-from numpy import interp, ndarray, array, loadtxt, log, zeros, cos, arccos, sin, \
-    nonzero, argsort, NaN, mean, ones, vstack, linspace, exp, \
-    arctan, arange, pi, sqrt, dot, hstack
+from numpy import interp, ndarray, array, loadtxt, log, zeros, cos, arccos, sin
+from numpy import nonzero, argsort, NaN, isnan, mean, ones, vstack, linspace, exp
+from numpy import arctan, arange, pi, sqrt, dot, hstack
 from numpy.linalg.linalg import norm
 from scipy.interpolate import interp1d
 from scipy.integrate import quad
@@ -481,10 +481,10 @@ class GenericFlowModel(Component):
     """
     Framework for a flow model
     """
-    ws_positions = Array([], iotype='in',
+    ws_positions = Array([], iotype='in',units='m',
         desc='the positions of the wind speeds in the global frame of reference [n,3] (x,y,z)')
-    ws_array = Array([], iotype='out',
-        desc='an array of wind speed to find wind speed')
+    ws_array = Array([], iotype='out', units='m/s',
+        desc='array of wind speed at ws_positions')
 
 
 @implement_base(GenericFlowModel)
@@ -493,12 +493,11 @@ class GenericWakeModel(Component):
     """
     Framework for a wake model
     """
+    # Inputs
     wt_desc = VarTree(GenericWindTurbineVT(), iotype='in',
         desc='the geometrical description of the current turbine')
-    ws_positions = Array([], iotype='in',
+    ws_positions = Array([], iotype='in', units='m',
         desc='the positions of the wind speeds in the global frame of reference [n,3] (x,y,z)')
-    ws_array = Array([], iotype='out',
-        desc='an array of wind speed to find wind speed')
     wt_xy = List([0.0, 0.0], iotype='in', units='m',
         desc='The x,y position of the current wind turbine')
     c_t = Float(0.0, iotype='in',
@@ -507,7 +506,9 @@ class GenericWakeModel(Component):
         desc='The inflow velocity at the ws_positions')
     wind_direction = Float(0.0, iotype='in', units='deg',
         desc='The inflow wind direction')
-
+    # Outputs
+    ws_array = Array([], iotype='out', units='m/s',
+        desc='array of wind speed at ws_positions')
     du_array = Array([], iotype='out', units='m/s',
         desc='The deficit in m/s. Empty if only zeros')
 
@@ -520,10 +521,128 @@ class GenericInflowGenerator(Component):
     """
     wind_speed = Float(0.0, iotype='in', units='m/s',
         desc='the reference wind speed')
-    ws_positions = Array([], iotype='in',
+    ws_positions = Array([], iotype='in',units='m',
         desc='the positions of the wind speeds in the global frame of reference [n,3] (x,y,z)')
-    ws_array = Array([], iotype='out',
-        desc='an array of wind speed to find wind speed')
+    ws_array = Array([], iotype='out', units='m/s',
+        desc='array of wind speed at ws_positions')
+
+@implement_base(GenericInflowGenerator)
+class PowerLawInflowGenerator(Component):
+
+    """
+    Framework for an inflow Power law inflow flow model
+    """
+    # Inputs
+    wind_speed = Float(0.0, iotype='in', units='m/s',
+        desc='the reference wind speed')
+    ws_positions = Array([], iotype='in',units='m',
+        desc='the positions of the wind speeds in the global frame of reference [n,3] (x,y,z)')
+    z_ref = Float(100., iotype='in',units='m',
+        desc='the reference height above ground level')
+    shear_coef =  Float(0.11, iotype='in',
+        desc='vertical wind speed profile shear coefficient')
+
+    # Outputs
+    ws_array = Array([], iotype='out', units='m/s',
+        desc='array of wind speed at ws_positions')
+
+    def execute(self):
+        self.ws_array = (self.wind_speed)*((self.ws_positions[:,2]/self.z_ref)** \
+                        self.shear_coef)
+
+@implement_base(GenericInflowGenerator)
+class LogLawInflowGenerator(Component):
+
+    """
+    Framework for an inflow Log law inflow flow model
+    """
+    # Inputs
+    wind_speed = Float(0.0, iotype='in', units='m/s',
+        desc='the reference wind speed')
+    z_ref = Float(100., iotype='in',units='m',
+        desc='the reference height above ground level')
+    ws_positions = Array([], iotype='in',units='m',
+        desc='the positions of the wind speeds in the global frame of reference [n,3] (x,y,z)')
+    z_0 = Float(0.0002, iotype='in',units='m',
+        desc='the surface roughness length')
+    displacement_0 = Float(0., iotype='in',units='m',
+        desc='the zero height displacement length')
+    L = Float(NaN, iotype='in',units='m',
+        desc='the Monin-Obukhov stability parameter length')
+    z_i = Float(400., iotype='in',units='m',
+        desc='boundary layer height')
+    stab_term = Int(0, iotype='in',units='m',
+        desc='the universal stability function (psi) selector')
+    # Outputs
+    ws_array = Array([], iotype='out', units='m/s',
+        desc='array of wind speed at ws_positions')
+
+    def execute(self):
+        ws_ref = self.wind_speed
+        z = self.ws_positions[:,2]
+        d = self.displacement_0
+        z_ref = self.z_ref
+        L = self.L
+        z_0 = self.z_0
+
+        if  isnan(L): # Neutral case
+            self.ws_array = ws_ref*log((z-d)/z_0)/log((z_ref-d)/z_0)
+
+        elif self.stab_term == 0:
+            '''
+            Pena formulation:
+
+            A. Pena, T. Mikkelsen, S.-E. Gryning, C.B. Hasager, A.N. Hahmann,
+            M. Badger, et al.,
+            Offshore vertical wind shear, DTU Wind Energy-E-Report-0005(EN),
+            Technical University of Denmark, 2012.
+            '''
+            aux = L/max(z)
+            #Test the consistency of the inputs.
+            assert (1.-12.*max(z)/L) >= 0,\
+            'Too high Monin-Obukhov Length. L must be larger than 12*max(z): '+ repr(aux)
+
+            x = (1.-12.*z/L)**(1./3.)
+            psi_m = (z/L>=0)*(-4.7*z/L)+(z/L<0)*(3./2.*log((1+x+x**2.)/3.) - \
+                    sqrt(3.)*arctan((2.*x+1.)/sqrt(3.)) + pi/sqrt(3.) )
+
+            x_ref = (1.-12.*z_ref/L)**(1./3.)
+            psi_m_ref = (z_ref/L>=0)*(-4.7*z_ref/L)+\
+                        (z_ref/L<0)*(3./2.*log((1+x_ref+x_ref**2.)/3.) - \
+                        sqrt(3.)*arctan((2.*x_ref+1.)/sqrt(3.)) + pi/sqrt(3.))
+
+            self.ws_array = ws_ref*(log((z-d)/z_0)    - psi_m)/ \
+                                   (log((z_ref-d)/z_0)- psi_m_ref)
+
+        elif self.stab_term == 1:
+            '''
+            Businger-Dyer formulation:
+
+            J. A. Businger, J. C. Wyngaard, Y. Izumi, and E. F. Bradley, 1971:
+            Flux-Profile Relationships in the Atmospheric Surface Layer.
+            J. Atmos. Sci., 28, 181-189
+            '''
+            kappa = 0.4  # Von Karman Constant
+            gamma = 19.3 # Empirical parameter derived from Kansas measurements
+            beta  = 4.8  # Empirical parameter derived from Kansas measurements
+
+            aux = L/max(z)
+            #Test the consistency of the inputs.
+            assert (1.-gamma*max(z)/L) >= 0,\
+            'Too high Monin-Obukhov Length. L must be larger than '+repr(gamma)+'*max(z): '+ repr(aux)
+
+            phi_m = (z/L<0) * (1.-gamma*z/L)**0.25
+            psi_m = (z/L<0)*(2.*log((1.+phi_m**2.)/2.)-2.*arctan(phi_m)+pi/2.) + \
+                    (z/L>=0)*(-beta*z/L)
+
+            phi_m_ref = (z_ref/L<0) * (1.-gamma*z_ref/L)**0.25
+            psi_m_ref = (z_ref/L<0)*(2.*log((1.+phi_m_ref**2.)/2.) - \
+                         2.*arctan(phi_m_ref) + pi/2. ) + \
+                         (z_ref/L>=0)*(-beta*z_ref/L)
+
+
+            self.ws_array = ws_ref*(log((z-d)/z_0)    - psi_m)/ \
+                                   (log((z_ref-d)/z_0)- psi_m_ref)
 
 
 @base
@@ -587,3 +706,63 @@ class WindTurbinePowerCurve(Component):
         self.thrust = self.c_t * self.density * self.hub_wind_speed ** 2.0 * \
             self.wt_desc.rotor_diameter ** 2.0 * pi / 4.0
 
+
+if __name__ == '__main__':
+    # in_pl = PowerLawInflowGenerator()
+    # in_pl.wind_speed = 10.
+    # in_pl.z_ref = 100.
+    # in_pl.ws_positions = array([[0.,0.,50.],[0.,0.,100.],[0.,0.,1000.]])
+    # in_pl.shear_coef = 0.1
+    # in_pl.run()
+    # print in_pl.ws_array
+    # assert (in_pl.ws_array==array([0.,1.,10.**1.1])).all
+
+    # in_log = LogLawInflowGenerator()
+    # in_log.wind_speed = 10.
+    # in_log.z_ref = 100.
+    # in_log.ws_positions = array([[0.,0.,50.],[0.,0.,100.],[0.,0.,1000.]])
+    # in_log.z_0 = 0.0002
+    # in_log.L = NaN
+    # in_log.run()
+    # print in_log.ws_array
+
+
+    # in_log2 = LogLawInflowGenerator()
+    # in_log2.wind_speed = 10.
+    # in_log2.z_ref = 100.
+    # in_log2.ws_positions = array([[0.,0.,50.],[0.,0.,100.],[0.,0.,1000.]])
+    # in_log2.z_0 = 0.0002
+    # in_log2.L = 20000
+    # in_log2.stab_term = 0
+    # in_log2.run()
+    # print in_log2.ws_array
+
+    # in_log2 = LogLawInflowGenerator()
+    # in_log2.wind_speed = 10.
+    # in_log2.z_ref = 100.
+    # in_log2.ws_positions = array([[0.,0.,50.],[0.,0.,100.],[0.,0.,1000.]])
+    # in_log2.z_0 = 0.0002
+    # in_log2.L = -1000
+    # in_log2.stab_term = 0
+    # in_log2.run()
+    # print in_log2.ws_array
+
+    # in_log3 = LogLawInflowGenerator()
+    # in_log3.wind_speed = 10.
+    # in_log3.z_ref = 100.
+    # in_log3.ws_positions = array([[0.,0.,50.],[0.,0.,100.],[0.,0.,1000.]])
+    # in_log3.z_0 = 0.0002
+    # in_log3.L = 20000
+    # in_log3.stab_term = 1
+    # in_log3.run()
+    # print in_log3.ws_array
+
+    # in_log3 = LogLawInflowGenerator()
+    # in_log3.wind_speed = 10.
+    # in_log3.z_ref = 100.
+    # in_log3.ws_positions = array([[0.,0.,50.],[0.,0.,100.],[0.,0.,1000.]])
+    # in_log3.z_0 = 0.0002
+    # in_log3.L = -1000
+    # in_log3.stab_term = 1
+    # in_log3.run()
+    # print in_log3.ws_array
