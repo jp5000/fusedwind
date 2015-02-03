@@ -707,7 +707,7 @@ class WindTurbinePowerCurve(Component):
             self.wt_desc.rotor_diameter ** 2.0 * pi / 4.0
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
     # in_pl = PowerLawInflowGenerator()
     # in_pl.wind_speed = 10.
     # in_pl.z_ref = 100.
